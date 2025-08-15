@@ -10,13 +10,13 @@ from fastapi.responses import FileResponse
 from starlette import status
 from database import sessionLocal
 from models import Share
-from typing import Annotated
+from typing import Annotated,List
 from sqlalchemy.orm import Session
 import os
 import uuid
 from pathlib import Path as PathLib
 from datetime import timezone, datetime
-from pydantic import EmailStr
+from pydantic import EmailStr,BaseModel
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -38,6 +38,9 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 router = APIRouter(prefix="/file", tags=["file"])
 
 db_dependency = Annotated[Session, Depends(get_db)]
+
+class EmailGroupRequest(BaseModel):
+    members:List[EmailStr]
 
 
 # Email configuration
@@ -82,9 +85,30 @@ async def send_email(to_email: str, filename: str, download_token: str, base_url
         server.send_message(msg)
         server.quit()
         print(f"Email sent to {to_email}")
+        return True
     except Exception as e:
         print(f"Error sending email: {e}")
+        return False
 
+async def group_mailing(members:List[str],filename:str,download_token:str,base_url:str):
+    if len(members) == 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail="Add alteast one member")
+    success_count=0
+    failed_emails=[]
+    for email in members:
+        try:
+            success = await send_email(email, filename, download_token, base_url)
+            if success:
+                success_count += 1
+            else:
+                failed_emails.append(email)
+        except Exception as e:
+            print(f"Error sending email to {email}: {e}")
+            failed_emails.append(email)
+    
+    print(f"Group email summary: {success_count}/{len(members)} sent successfully")
+    if failed_emails:
+        print(f"Failed to send to: {failed_emails}")
 
 async def cleanup(filepath: str, db: db_dependency, filerequest):
     try:
@@ -162,7 +186,7 @@ async def upload_file(
         )
 
     # here the file type and the new name are joined
-    file_type = PathLib(fileupload.filename).suffix
+    file_type = PathLib(fileupload.filename).suffix.lower()
     if file_type.lower() not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -170,7 +194,7 @@ async def upload_file(
         )
 
     try:
-        new_file=await core_share(db,fileupload,fileupload,file_type,title)
+        new_file=await core_share(db,fileupload,file_type,title)
 
         return {
             "status": "uploaded",
@@ -231,7 +255,7 @@ async def share_via_email(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Upload a file"
         )
-    file_type = PathLib(filerequest.filename).suffix
+    file_type = PathLib(filerequest.filename).suffix.lower()
     if file_type not in ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail=f"{file_type} type files are not supported")
 
@@ -251,6 +275,47 @@ async def share_via_email(
         background_tasks.add_task(cleanup, new_file.file_path, db, new_file)
 
         return {"message": "Email sent succefully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        return f"Exception {e} occurred!"
+
+@router.post("/group-via-email/")
+async def share_to_group_via_email(
+    db: db_dependency,
+    background_tasks: BackgroundTasks,
+    filerequest: UploadFile,
+    title: str = Form(...),
+    base_url: str = Form(default="http://localhost:8000"),
+    members:str =Form(...)
+):
+    if not filerequest.filename:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Upload a file"
+        )
+    file_type = PathLib(filerequest.filename).suffix.lower()
+    if file_type not in ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail=f"{file_type} type files are not supported")
+    if len(members) == 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail="Add atleast one member into the group")
+    try:
+        # lets first add the file into local storage
+        # Now we will write the uploaded file into the local storage file path
+        email_list=[mail.strip() for mail in members.split(',') if mail.strip()]
+        new_file=await core_share(db,filerequest,file_type,title)
+
+        background_tasks.add_task(
+            group_mailing,
+            email_list,
+            new_file.file_name,
+            new_file.token,
+            base_url
+        )
+
+        #background_tasks.add_task(cleanup, new_file.file_path, db, new_file)
+
+        return {"message": "Email sent succefully","recipients_count": len(email_list)}
     except HTTPException:
         raise
     except Exception as e:
