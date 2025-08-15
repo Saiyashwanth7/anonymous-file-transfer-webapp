@@ -95,7 +95,7 @@ async def cleanup(filepath: str, db: db_dependency, filerequest):
         print(f"{e} from 'Cleanup'")
 
 
-MAXIMUM_FILE_SIZE = 2 * 1024 * 1024
+MAXIMUM_FILE_SIZE = 2 * 1024 * 1024 * 1024
 
 ALLOWED_EXTENSIONS = {
     '.txt', '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
