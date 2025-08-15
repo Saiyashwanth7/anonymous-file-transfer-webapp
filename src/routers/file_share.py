@@ -107,13 +107,20 @@ ALLOWED_EXTENSIONS = {
 }
 
 
+#reusable function for uploading file
 async def core_share(
     db: db_dependency,
     filerequest: UploadFile,
-    file_path: str,
     file_type: str,
-    new_title: str,
+    current_title: str,
 ):
+    new_title = f"{current_title}{file_type}"
+
+    unique_name = f"{str(uuid.uuid4())}_{new_title}"
+
+    # created a path to store the uploaded file below
+    file_path = os.path.join(UPLOAD_DIR, unique_name)
+    
     current_size = 0
     with open(f"{file_path}", "wb") as f:
         while chunk := await filerequest.read(1024 * 1024):
@@ -126,13 +133,19 @@ async def core_share(
                 )
             f.write(chunk)
             # here we are using chunks to support larger data
-
+    if current_size==0:
+        os.remove(file_path)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Empty files are not allowed"
+        )
+        
     # added the file name and path into DB
     new_file = Share(file_name=new_title, file_path=file_path, file_type=file_type)
     db.add(new_file)
     db.commit()
     db.refresh(new_file)
-
+    return new_file
 
 @router.get("/")
 async def read_db(db: db_dependency):
@@ -156,34 +169,8 @@ async def upload_file(
             detail=f"{file_type} - Files not acceptable",
         )
 
-    new_name = f"{title}{file_type}"
-
-    unique_name = f"{str(uuid.uuid4())}_{new_name}"
-
-    # created a path to store the uploaded file below
-    file_path = os.path.join(UPLOAD_DIR, unique_name)
-
     try:
-        # lets first add the file into local storage
-        # Now we will write the uploaded file into the local storage file path
-        current_size = 0
-        with open(f"{file_path}", "wb") as f:
-            while chunk := await fileupload.read(1024 * 1024):
-                current_size += len(chunk)
-                if current_size > MAXIMUM_FILE_SIZE:
-                    f.close()
-                    raise HTTPException(
-                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                        detail="File size exceeded maximum file size of 2GB ",
-                    )
-                f.write(chunk)
-                # here we are using chunks to support larger data
-
-        # added the file name and path into DB
-        new_file = Share(file_name=new_name, file_path=file_path, file_type=file_type)
-        db.add(new_file)
-        db.commit()
-        db.refresh(new_file)
+        new_file=await core_share(db,fileupload,fileupload,file_type,title)
 
         return {
             "status": "uploaded",
@@ -191,10 +178,9 @@ async def upload_file(
             "Download token": new_file.token,
             "size": fileupload.size,
         }
-
+    except HTTPException:
+        raise
     except Exception as e:
-        if os.path.exists(file_path):
-            os.remove(file_path)
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"{e}"
@@ -246,30 +232,13 @@ async def share_via_email(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Upload a file"
         )
     file_type = PathLib(filerequest.filename).suffix
-    new_title = f"{str(uuid.uuid4())}_{title}.{file_type}"
-    file_path = os.path.join(UPLOAD_DIR, new_title)
+    if file_type not in ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail=f"{file_type} type files are not supported")
 
     try:
         # lets first add the file into local storage
         # Now we will write the uploaded file into the local storage file path
-        current_size = 0
-        with open(f"{file_path}", "wb") as f:
-            while chunk := await filerequest.read(1024 * 1024):
-                current_size += len(chunk)
-                if current_size > MAXIMUM_FILE_SIZE:
-                    f.close()
-                    raise HTTPException(
-                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                        detail="File size exceeded maximum file size of 2GB ",
-                    )
-                f.write(chunk)
-                # here we are using chunks to support larger data
-
-        # added the file name and path into DB
-        new_file = Share(file_name=new_title, file_path=file_path, file_type=file_type)
-        db.add(new_file)
-        db.commit()
-        db.refresh(new_file)
+        new_file=await core_share(db,filerequest,file_type,title)
 
         background_tasks.add_task(
             send_email,
@@ -282,9 +251,8 @@ async def share_via_email(
         background_tasks.add_task(cleanup, new_file.file_path, db, new_file)
 
         return {"message": "Email sent succefully"}
-
+    except HTTPException:
+        raise
     except Exception as e:
-        if os.path.exists(file_path):
-            os.remove(file_path)
-            db.rollback()
+        db.rollback()
         return f"Exception {e} occurred!"
