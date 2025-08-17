@@ -9,7 +9,7 @@ from fastapi import (
 from fastapi.responses import FileResponse
 from starlette import status
 from database import sessionLocal
-from models import Share
+from models import Share,GroupShare
 from typing import Annotated,List
 from sqlalchemy.orm import Session
 import os
@@ -38,10 +38,6 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 router = APIRouter(prefix="/file", tags=["file"])
 
 db_dependency = Annotated[Session, Depends(get_db)]
-
-class EmailGroupRequest(BaseModel):
-    members:List[EmailStr]
-
 
 # Email configuration
 SMTP_SERVER = "smtp.gmail.com"  # for Gmail
@@ -91,7 +87,7 @@ async def send_email(to_email: str, filename: str, download_token: str, base_url
         return False
 
 async def group_mailing(members:List[str],filename:str,download_token:str,base_url:str):
-    if len(members) == 0:
+    if not members:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail="Add alteast one member")
     success_count=0
     failed_emails=[]
@@ -106,9 +102,11 @@ async def group_mailing(members:List[str],filename:str,download_token:str,base_u
             print(f"Error sending email to {email}: {e}")
             failed_emails.append(email)
     
-    print(f"Group email summary: {success_count}/{len(members)} sent successfully")
     if failed_emails:
-        print(f"Failed to send to: {failed_emails}")
+        return f"Failed to send to: {failed_emails}"
+        
+    return f"Group email summary: {success_count}/{len(members)} sent successfully",True
+    
 
 async def cleanup(filepath: str, db: db_dependency, filerequest):
     try:
@@ -131,7 +129,7 @@ ALLOWED_EXTENSIONS = {
 }
 
 
-#reusable function for uploading file
+#reusable function for uploading file for single user
 async def core_share(
     db: db_dependency,
     filerequest: UploadFile,
@@ -272,7 +270,7 @@ async def share_via_email(
             base_url
         )
 
-        background_tasks.add_task(cleanup, new_file.file_path, db, new_file)
+        #background_tasks.add_task(cleanup, new_file.file_path, db, new_file)
 
         return {"message": "Email sent succefully"}
     except HTTPException:
@@ -288,7 +286,7 @@ async def share_to_group_via_email(
     filerequest: UploadFile,
     title: str = Form(...),
     base_url: str = Form(default="http://localhost:8000"),
-    members:str =Form(...)
+    members:EmailStr =Form(...)
 ):
     if not filerequest.filename:
         raise HTTPException(

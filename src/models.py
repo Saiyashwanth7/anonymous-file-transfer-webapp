@@ -16,7 +16,7 @@ class Share(Base):
 class GroupShare(Base):
     __tablename__="grouptable"
     id=Column(Integer,primary_key=True,index=True)
-    #share_id=Column(Integer,ForeignKey("filestorage.id"))
+    share_id=Column(String,ForeignKey('filestorage.id'))
     file_name=Column(String)
     file_path=Column(String)
     receiver_email=Column(String)
