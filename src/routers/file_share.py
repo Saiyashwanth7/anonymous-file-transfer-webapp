@@ -86,28 +86,7 @@ async def send_email(to_email: str, filename: str, download_token: str, base_url
         print(f"Error sending email: {e}")
         return False
 
-async def group_mailing(members:List[str],filename:str,download_token:str,base_url:str):
-    if not members:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail="Add alteast one member")
-    success_count=0
-    failed_emails=[]
-    for email in members:
-        try:
-            success = await send_email(email, filename, download_token, base_url)
-            if success:
-                success_count += 1
-            else:
-                failed_emails.append(email)
-        except Exception as e:
-            print(f"Error sending email to {email}: {e}")
-            failed_emails.append(email)
     
-    if failed_emails:
-        return f"Failed to send to: {failed_emails}"
-        
-    return f"Group email summary: {success_count}/{len(members)} sent successfully",True
-    
-
 async def cleanup(filepath: str, db: db_dependency, filerequest):
     try:
         db.delete(filerequest)
