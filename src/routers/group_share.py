@@ -28,6 +28,7 @@ from .file_share import (
 )
 
 
+
 def get_db():
     db = sessionLocal()
     try:
@@ -211,26 +212,16 @@ async def group_share(
         db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{e}")
 
-"""async def cleanup(filepath,db:db_dependency,group_request):
+async def cleanup(db:db_dependency,token:str):
     try:
         # Delete the group share record
-        db.delete(group_request)
-        
-        # Check if other group shares are using this file
-        other_shares = db.query(GroupShare).filter(
-            GroupShare.id != group_request.id
-        ).count()
-        
-        # Only delete file if no other shares are using it
-        if other_shares == 0 and os.path.exists(filepath):
-            os.remove(filepath)
-            
+        cleaning_up=db.query(GroupShare).filter(GroupShare.token==token).first()
+        db.delete(cleaning_up)
         db.commit()
-        print(f"Cleaned up group share record and file: {filepath}")
         
     except Exception as e:
         print(f"Error in cleanup_group_share: {e}")
-        db.rollback()"""
+        db.rollback()
 
 @router.get("/")
 async def read_gshare(db: db_dependency):
@@ -309,6 +300,8 @@ async def downlaod_group_shared_file(
     db: db_dependency, token: str, background_tasks: BackgroundTasks
 ):
     group_request = db.query(GroupShare).filter(GroupShare.token == token).first()
+    if not group_request:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,detail="You have already finished downloading the file,token expired")
     share_id=group_request.share_id
     sharing_file=db.query(Share).filter(Share.id==share_id).first()
     if not sharing_file:
@@ -343,7 +336,7 @@ async def downlaod_group_shared_file(
         db.commit()
         raise HTTPException(status_code=404, detail="Download link has expired")
 
-    #background_tasks.add_task(cleanup, sharing_file.file_path, db, sharing_file)
+    background_tasks.add_task(cleanup,db,token)
 
     return FileResponse(
         path=sharing_file.file_path,
