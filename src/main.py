@@ -2,7 +2,6 @@ from fastapi import FastAPI,HTTPException,status
 from database import engine,sessionLocal
 from models import Base,GroupShare,Share
 from routers import file_share,group_share
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from datetime import datetime,timezone
 from contextlib import asynccontextmanager
 import asyncio
