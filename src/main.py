@@ -1,10 +1,11 @@
 from fastapi import FastAPI,HTTPException,status
-from database import engine,sessionLocal
-from models import Base,GroupShare,Share
-from routers import file_share,group_share
+from .database import engine,sessionLocal
+from .models import Base,GroupShare,Share
+from .routers import file_share,group_share
 from datetime import datetime,timezone
 from contextlib import asynccontextmanager
 import asyncio
+import os
 
 Base.metadata.create_all(bind=engine)
 
@@ -14,7 +15,11 @@ async def auto_cleanup_Share():
         db=sessionLocal()
         try:
             current_datetime=datetime.now(timezone.utc)
-            db.query(Share).filter(Share.expires<current_datetime).delete()
+            expired_files=db.query(Share).filter(Share.expires<current_datetime).all()
+            for file in expired_files:
+                if file.file_path and os.path.exists(file.file_path):
+                    os.remove(file.file_path)
+            db.query(Share).filter(Share.expires<current_datetime).delete(synchronize_session=False)
             db.commit()
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail=f"{e} occured")

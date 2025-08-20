@@ -8,8 +8,8 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse
 from starlette import status
-from database import sessionLocal
-from models import Share,GroupShare
+from ..database import sessionLocal
+from ..models import Share,GroupShare
 from typing import Annotated,List
 from sqlalchemy.orm import Session
 import os

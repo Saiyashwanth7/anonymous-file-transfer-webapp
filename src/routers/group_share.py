@@ -8,8 +8,8 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse
 from starlette import status
-from database import sessionLocal
-from models import Share, GroupShare
+from ..database import sessionLocal
+from ..models import Share, GroupShare
 from typing import Annotated, List
 from sqlalchemy.orm import Session
 import os
@@ -216,9 +216,18 @@ async def cleanup(db:db_dependency,token:str):
     try:
         # Delete the group share record
         cleaning_up=db.query(GroupShare).filter(GroupShare.token==token).first()
+        if not cleaning_up:
+            return
+        share_id=cleaning_up.share_id
         db.delete(cleaning_up)
         db.commit()
-        
+        remaining_shares=db.query(GroupShare).filter(GroupShare.share_id==share_id).count()
+        if remaining_shares==0:
+            share_Record=db.query(Share).filter(Share.id==share_id).first()
+            if os.path.exists(share_Record.file_path):
+                os.remove(share_Record.file_path)
+            db.delete(share_Record)
+            db.commit()
     except Exception as e:
         print(f"Error in cleanup_group_share: {e}")
         db.rollback()
