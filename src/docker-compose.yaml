@@ -1,0 +1,51 @@
+version: "3.8"
+
+services:
+  app1:
+    build: .
+    ports: 
+      - '8001:8000'  # Map to port 8001 on host
+    volumes:
+      - ./uploads:/app/uploads
+      - ./app.db:/app/app.db
+    environment:
+      - EMAIL_ADDRESS=${EMAIL_ADDRESS}
+      - EMAIL_PASSWORD=${EMAIL_PASSWORD}
+    env_file:
+      - .env
+
+  app2:
+    build: .
+    ports: 
+      - '8002:8000'  # Map to port 8002 on host
+    volumes:
+      - ./uploads:/app/uploads
+      - ./app.db:/app/app.db  # Consider using different DB or shared volume
+    environment:
+      - EMAIL_ADDRESS=${EMAIL_ADDRESS}
+      - EMAIL_PASSWORD=${EMAIL_PASSWORD}
+    env_file:
+      - .env
+
+  app3:
+    build: .
+    ports: 
+      - '8003:8000'  # Map to port 8002 on host
+    volumes:
+      - ./uploads:/app/uploads
+      - ./app.db:/app/app.db  # Consider using different DB or shared volume
+    environment:
+      - EMAIL_ADDRESS=${EMAIL_ADDRESS}
+      - EMAIL_PASSWORD=${EMAIL_PASSWORD}
+    env_file:
+      - .env
+  nginx:
+    image: nginx:alpine
+    ports:
+      - '8080:8080'
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - app1
+      - app2
+      - app3
