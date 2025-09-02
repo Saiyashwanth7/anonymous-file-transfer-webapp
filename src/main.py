@@ -51,3 +51,7 @@ async def lifespan(app:FastAPI):
 app = FastAPI(lifespan=lifespan)
 app.include_router(file_share.router)
 app.include_router(group_share.router)
+
+@app.get('/')
+async def home():
+    return {"message":"You have landed in a wrong page goto http://127.0.0.1:8000/docs#/"}
